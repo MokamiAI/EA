@@ -1,0 +1,59 @@
+# Build directories
+Build/
+bin/
+lib/
+dist/
+*.o
+*.a
+*.so
+*.dylib
+*.dll
+*.exe
+
+# CMake
+CMakeFiles/
+cmake_install.cmake
+Makefile
+CMakeCache.txt
+CTestTestfile.cmake
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.cppcheck
+
+# Test results
+*.log
+test_results.xml
+coverage/
+
+# MT5 specific
+*.ex5
+*.mq5.bak
+MQL5/Experts/Grasshopper/
+Terminal/
+
+# Logs and temp files
+Logs/*.log
+Logs/*.txt
+*.tmp
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Documentation build
+docs/_build/
+
+# Node modules (if using npm scripts)
+node_modules/
+package-lock.json
+
+# OS files
+Thumbs.db
+.DS_Store

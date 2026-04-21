@@ -1,0 +1,151 @@
+{
+  "EA": {
+    "Name": "Grasshopper Expert Advisor",
+    "Version": "1.0.0",
+    "Author": "Grasshopper Trading System",
+    "CreatedDate": "2026-04-20"
+  },
+
+  "Strategy": {
+    "Description": "Multi-timeframe Price Action Pattern Analysis",
+    "RiskPerTrade": 1.0,
+    "MinRiskRewardRatio": 1.5,
+    "MaxConcurrentTrades": 2,
+    "MaxDailyLossPercent": 5.0
+  },
+
+  "Timeframes": {
+    "Weekly": "PERIOD_W1",
+    "Daily": "PERIOD_D1",
+    "FourHour": "PERIOD_H4",
+    "OneHour": "PERIOD_H1",
+    "FiveMinute": "PERIOD_M5"
+  },
+
+  "TradingSession": {
+    "StartHour": 0,
+    "EndHour": 23,
+    "TradeMonday": true,
+    "TradeTuesday": true,
+    "TradeWednesday": true,
+    "TradeThursday": true,
+    "TradeFriday": true,
+    "TradeSaturday": false,
+    "TradeSunday": false,
+    "FridayCloseTime": 22
+  },
+
+  "Analysis": {
+    "MomentumPeriod": 14,
+    "MomentumThreshold": 1.5,
+    "FibonacciTolerance": 5.0,
+    "SRTolerance": 5.0,
+    "SRLookbackBars": 100,
+    "MinConfluenceScore": 6,
+    "MinStopLossDistance": 20.0,
+    "RequireCandlestickConfirm": true
+  },
+
+  "RiskManagement": {
+    "UseTrailingStop": true,
+    "TrailingStopDistance": 20.0,
+    "TrailingStopActivationPips": 50.0,
+    "BreakEvenActivationPips": 30.0,
+    "AutoCloseOnDayEnd": false
+  },
+
+  "BrokerSpecific": {
+    "SpreadTolerance": 2.0,
+    "UseMarketOrders": true,
+    "OrderDeviationPips": 50.0,
+    "MaxSlippagePips": 3.0,
+    "RequireSpreadCheck": true
+  },
+
+  "Symbols": [
+    {
+      "Name": "EURUSD",
+      "Active": true,
+      "MinLot": 0.01,
+      "MaxLot": 100.0,
+      "LotStep": 0.01
+    },
+    {
+      "Name": "GBPUSD",
+      "Active": false,
+      "MinLot": 0.01,
+      "MaxLot": 100.0,
+      "LotStep": 0.01
+    },
+    {
+      "Name": "USDJPY",
+      "Active": false,
+      "MinLot": 0.01,
+      "MaxLot": 100.0,
+      "LotStep": 0.01
+    }
+  ],
+
+  "Notifications": {
+    "EnableEmailAlerts": false,
+    "EmailAddress": "your-email@example.com",
+    "EnableMobileAlerts": false,
+    "EnableLogFile": true,
+    "LogDirectory": "./Logs/",
+    "AlertOnTrade": true,
+    "AlertOnError": true,
+    "AlertOnStopLoss": true,
+    "AlertOnTakeProfit": true
+  },
+
+  "Testing": {
+    "BacktestMode": false,
+    "PaperTradingMode": false,
+    "DebugMode": false,
+    "VerboseLogging": false,
+    "MaxBacktestTrades": 1000
+  },
+
+  "Performance": {
+    "MaxCPUUsage": 50.0,
+    "UpdateFrequencyMs": 100,
+    "HistoryBufferSize": 10000,
+    "OptimizationLevel": 2
+  },
+
+  "Fibonacci": {
+    "Level_0": 0.0,
+    "Level_236": 0.236,
+    "Level_382": 0.382,
+    "Level_618": 0.618,
+    "Level_100": 1.0,
+    "Level_1618": 1.618,
+    "Level_2618": 2.618,
+    "Level_4236": 4.236
+  },
+
+  "ElliotWave": {
+    "UseElliotWave": true,
+    "WaveBRangeMin": 0.38,
+    "WaveBRangeMax": 0.78,
+    "WaveCMinFibonacci": 0.618,
+    "WaveDAsPercentageOfB": 0.618,
+    "WaveEExtensionTarget": 1.618
+  },
+
+  "PatternRecognition": {
+    "CandlestickMinBodySize": 5.0,
+    "CandlestickWickRatio": 0.5,
+    "PatternConfirmationBars": 1,
+    "PatternTolerance": 5.0
+  },
+
+  "Optimization": {
+    "OptimizeParameters": false,
+    "OptimizationMethod": "genetic",
+    "PopulationSize": 100,
+    "Generations": 50,
+    "ElitePercentage": 10.0,
+    "MutationRate": 0.1
+  }
+}

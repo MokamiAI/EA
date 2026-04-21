@@ -1,0 +1,45 @@
+{
+	"folders": [
+		{
+			"path": ".",
+			"name": "Grasshopper EA"
+		}
+	],
+	"settings": {
+		"editor.formatOnSave": true,
+		"editor.defaultFormatter": "ms-vscode.cpptools",
+		"C_Cpp.default.includePath": [
+			"${workspaceFolder}/Source/Include",
+			"${workspaceFolder}/Tests"
+		],
+		"C_Cpp.default.defines": [
+			"_UNIT_TESTS_",
+			"DEBUG"
+		],
+		"files.exclude": {
+			"**/.*": true,
+			"**/node_modules": true,
+			"**/Build/*": false
+		},
+		"search.exclude": {
+			"**/Build": true,
+			"**/Logs": true,
+			"**/node_modules": true
+		},
+		"[markdown]": {
+			"editor.defaultFormatter": "esbenp.prettier-vscode",
+			"editor.formatOnSave": true
+		}
+	},
+	"extensions": {
+		"recommendations": [
+			"ms-vscode.cpptools",
+			"ms-vscode.cmake-tools",
+			"ms-vscode.makefile-tools",
+			"eamodio.gitlens",
+			"ms-vscode.hexdump",
+			"esbenp.prettier-vscode",
+			"streetsidesoftware.code-spell-checker"
+		]
+	}
+}
