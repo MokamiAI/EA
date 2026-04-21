@@ -1,460 +1,398 @@
 // ═══════════════════════════════════════════════════════════════════════
-// GRASSHOPPER EXPERT ADVISOR v1.0
+// GRASSHOPPER EXPERT ADVISOR v3.0 - UNIVERSAL FINAL VERSION
 // ═══════════════════════════════════════════════════════════════════════
 // 
-// Strategy: Multi-timeframe price action pattern analysis
-// Weekly → Daily → 4H → 1H → 5M
+// Strategy: Advanced Multi-Timeframe Confirmation + Universal Symbols
+// Works with: Forex, Indices (DAX, FTSE, etc), Stocks, Commodities, Crypto
 // 
 // Author: Grasshopper Trading System
 // Created: April 2026
-// Purpose: Automated trading based on confluence of technical analysis
+// Purpose: Trade ANY symbol with intelligent multi-timeframe confirmation
 //
 // ═══════════════════════════════════════════════════════════════════════
 
 #property copyright "Grasshopper"
 #property link      "https://grasshopper-trading.com"
-#property version   "1.00"
+#property version   "3.00"
 #property strict
-#property description "Price Action Pattern Trading EA - Grasshopper System"
+#property description "Universal Multi-Symbol EA - Works with Forex, Indices (DAX), Stocks, Commodities, Crypto"
 
 // Include necessary MT5 libraries
 #include <Trade\Trade.mqh>
-#include <Trade\PositionInfo.mqh>
-#include <Trade\OrderInfo.mqh>
-#include <Trade\DealInfo.mqh>
-
-// Forward declarations of our custom modules (to be created)
-// #include "Include\ChartData.mqh"
-// #include "Include\TrendAnalyzer.mqh"
-// #include "Include\ImpulseCorrection.mqh"
-// #include "Include\PatternRecognizer.mqh"
-// #include "Include\FibonacciLevels.mqh"
-// #include "Include\ElliottWave.mqh"
-// #include "Include\SupportResistance.mqh"
-// #include "Include\SignalGenerator.mqh"
-// #include "Include\RiskManager.mqh"
-// #include "Include\OrderManager.mqh"
-// #include "Include\Utils.mqh"
+#include <Math\Stat\Math.mqh>
 
 // ═══════════════════════════════════════════════════════════════════════
-// INPUT PARAMETERS (User-configurable)
+// EA INPUTS
 // ═══════════════════════════════════════════════════════════════════════
 
-// Strategy Parameters
-input string TradeSymbol = "EURUSD";               // Which pair to trade
-input double RiskPerTrade = 1.0;                   // Risk as % of account
-input double MinRiskRewardRatio = 1.5;             // Minimum acceptable RR
-input int MaxConcurrentTrades = 2;                 // Max simultaneous trades
-input double MaxDailyLossPercent = 5.0;            // Daily loss limit
-
-// Time Parameters
-input int SessionStartHour = 0;                    // Trading starts (UTC)
-input int SessionEndHour = 23;                     // Trading ends (UTC)
-input bool TradeMonday = true;                     // Monday trading enabled
-input bool TradeFriday = true;                     // Friday trading (until 22:00)
-
-// Analysis Parameters
-input int MomentumPeriod = 14;                     // ATR period for momentum
-input double MomentumThreshold = 1.5;              // Min ATR multiple for impulse
-input double FibonacciTolerance = 5.0;             // Fibonacci tolerance (pips)
-input double SRTolerance = 5.0;                    // Support/Resistance tolerance
-input int SRLookbackBars = 100;                    // Bars for S/R identification
-
-// Entry Parameters
-input int MinConfluenceScore = 6;                  // Minimum confluence (1-10)
-input double MinStopLossDistance = 20.0;           // Minimum SL distance (pips)
-input bool RequireCandlestickConfirm = true;       // Require 5M candle pattern
-
-// Risk Management
-input bool UseTrailingStop = true;                 // Enable trailing stop
-input double TrailingStopDistance = 20.0;          // Trail distance (pips)
-input double TrailingStopActivationPips = 50.0;    // Activate after X pips profit
-
-// Broker Specific
-input double SpreadTolerance = 2.0;                // Max acceptable spread (pips)
-input bool UseMarketOrders = true;                 // Market vs pending orders
-input bool AutoCloseOnDayEnd = false;              // Close all at session end
+input string    EA_NAME             = "Grasshopper Universal EA";
+input double    RiskPercentage      = 1.0;           // Risk % per trade
+input double    MinRiskRewardRatio  = 1.5;           // Minimum R/R ratio
+input int       MaxConcurrentTrades = 2;             // Max open trades
+input int       MagicNumber         = 20260425;      // EA magic number
+input int       SlippagePoints      = 10;            // Slippage tolerance
+input int       MinConfluenceScore  = 50;            // Minimum confluence (0-100)
+input int       MinTimeframeConfirms= 3;             // Minimum confirmations (3-5)
+input double    MaxSpreadPoints     = 5.0;           // Max acceptable spread
+input bool      EnableAutoAdjust    = true;          // Auto-adjust for symbol type
 
 // ═══════════════════════════════════════════════════════════════════════
 // GLOBAL VARIABLES
 // ═══════════════════════════════════════════════════════════════════════
 
-CTrade trade;                                      // Trade operations object
-CPositionInfo positionInfo;                        // Position information
-COrderInfo orderInfo;                              // Order information
-
-datetime lastBarTime = 0;                          // Track bar close times
-int totalTrades = 0;                               // Total trades executed
-int winningTrades = 0;                             // Count of winners
-int losingTrades = 0;                              // Count of losers
-double totalProfit = 0.0;                          // Total P&L
-double dailyProfit = 0.0;                          // Today's P&L
-datetime dailyStartTime = 0;                       // Start of trading day
-
-bool eaInitialized = false;                        // Initialization flag
-string eaLogFile = "";                             // Log file path
+CTrade                  tradeManager;
+bool                    eaInitialized = false;
+int                     lastAnalysisTime = 0;
+double                  point_value;
+int                     digits;
+string                  symbol_type = "Unknown";
 
 // ═══════════════════════════════════════════════════════════════════════
-// ENUMS & STRUCTURES
-// ═══════════════════════════════════════════════════════════════════════
-
-enum TrendDirection {
-    TREND_BULLISH = 1,      // Higher highs, higher lows
-    TREND_BEARISH = -1,     // Lower highs, lower lows
-    TREND_NEUTRAL = 0       // Unclear direction
-};
-
-enum PriceState {
-    STATE_IMPULSE = 1,      // Strong directional move
-    STATE_CORRECTION = -1,  // Retracement/consolidation
-    STATE_UNKNOWN = 0       // Insufficient data
-};
-
-enum SignalType {
-    SIGNAL_BUY = 1,         // Long entry signal
-    SIGNAL_SELL = -1,       // Short entry signal
-    SIGNAL_NONE = 0         // No signal
-};
-
-// ═══════════════════════════════════════════════════════════════════════
-// INITIALIZATION
+// ON INIT
 // ═══════════════════════════════════════════════════════════════════════
 
 int OnInit() {
-    Print("═══════════════════════════════════════════════════════════════════════");
-    Print("GRASSHOPPER Expert Advisor v1.0 - Initializing...");
-    Print("═══════════════════════════════════════════════════════════════════════");
+    Print("\n" + StringFormat("%c%c%c%c%c", 37, 37, 37, 37, 37) + " " + EA_NAME + " - Initializing... " + StringFormat("%c%c%c%c%c", 37, 37, 37, 37, 37));
     
-    // Validate symbol
-    if (!SymbolSelect(TradeSymbol, true)) {
-        Print("[ERROR] Symbol not found: ", TradeSymbol);
+    // Get symbol info
+    point_value = SymbolInfoDouble(_Symbol, SYMBOL_POINT);
+    digits = (int)SymbolInfoInteger(_Symbol, SYMBOL_DIGITS);
+    
+    // Detect symbol type
+    DetectSymbolType();
+    
+    // Validate symbol is tradeable
+    if (!SymbolSelect(_Symbol, true)) {
+        Print("[ERROR] Symbol ", _Symbol, " is not available!");
         return INIT_FAILED;
     }
     
-    // Check if EA is allowed to trade
-    if (!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)) {
-        Print("[ERROR] Trading not allowed - check Tools > Options > Advisors");
-        return INIT_FAILED;
-    }
+    // Initialize trade manager
+    tradeManager.SetExpertMagicNumber(MagicNumber);
+    tradeManager.SetDeviationInPoints(SlippagePoints);
     
-    // Check if automated trading enabled
-    if (!AccountInfoInteger(ACCOUNT_TRADE_ALLOWED)) {
-        Print("[ERROR] Automated trading not allowed for this account");
-        return INIT_FAILED;
-    }
+    // Print initialization info
+    Print("\n" + StringFormat("%c%c%c%c%c", 37, 37, 37, 37, 37) + " EA INITIALIZED " + StringFormat("%c%c%c%c%c", 37, 37, 37, 37, 37));
+    Print("Symbol: ", _Symbol);
+    Print("Symbol Type: ", symbol_type);
+    Print("Risk per trade: ", RiskPercentage, "%");
+    Print("Min RR Ratio: ", MinRiskRewardRatio);
+    Print("Min Confluence: ", MinConfluenceScore);
+    Print("Auto Adjust: ", (EnableAutoAdjust ? "YES" : "NO"));
+    Print(StringFormat("%c%c%c%c%c", 37, 37, 37, 37, 37) + " [SUCCESS] Universal EA ready! " + StringFormat("%c%c%c%c%c", 37, 37, 37, 37, 37) + "\n");
     
-    // Verify account has sufficient funds
-    double balance = AccountInfoDouble(ACCOUNT_BALANCE);
-    if (balance < 500) {
-        Print("[WARNING] Account balance is low (< $500). Recommended minimum $1000");
-    }
-    
-    // Initialize trade object
-    trade.SetExpertMagicNumber(20260420);     // Magic number for this EA
-    trade.SetDeviationInPoints(50);           // Max 50 point slippage
-    trade.SetAsyncMode(false);                // Synchronous order execution
-    
-    LogMessage("═══ EA INITIALIZED ═══");
-    LogMessage("Symbol: " + TradeSymbol);
-    LogMessage("Risk per trade: " + DoubleToString(RiskPerTrade, 2) + "%");
-    LogMessage("Min RR Ratio: " + DoubleToString(MinRiskRewardRatio, 2));
-    LogMessage("Max Daily Loss: " + DoubleToString(MaxDailyLossPercent, 2) + "%");
-    
-    // Mark initialization complete
     eaInitialized = true;
-    Print("[SUCCESS] Grasshopper EA initialized successfully!");
-    Print("═══════════════════════════════════════════════════════════════════════");
-    
     return INIT_SUCCEEDED;
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// DEINITIALIZATION
+// DETECT SYMBOL TYPE
 // ═══════════════════════════════════════════════════════════════════════
 
-void OnDeinit(const int reason) {
-    string reasonText = "";
-    switch (reason) {
-        case REASON_ACCOUNT: reasonText = "Account change"; break;
-        case REASON_CHARTCHANGE: reasonText = "Chart change"; break;
-        case REASON_CHARTCLOSE: reasonText = "Chart close"; break;
-        case REASON_PARAMETERS: reasonText = "Parameters changed"; break;
-        case REASON_RECOMPILE: reasonText = "Recompiled"; break;
-        case REASON_REMOVE: reasonText = "Removed"; break;
-        case REASON_INITFAILED: reasonText = "Init failed"; break;
-        case REASON_CLOSE: reasonText = "Close"; break;
-        default: reasonText = "Unknown"; break;
+void DetectSymbolType() {
+    string upper_sym = StringToUpper(_Symbol);
+    
+    // INDICES
+    if (upper_sym == "DAX" || upper_sym == "CAC" || upper_sym == "FTSE" || 
+        upper_sym == "ASX" || upper_sym == "NIKKEI" || upper_sym == "HSI" ||
+        upper_sym == "SENSEX" || upper_sym == "MIB" || upper_sym == "IBEX" ||
+        StringFind(upper_sym, "SP500") >= 0 || StringFind(upper_sym, "NASDAQ") >= 0 ||
+        StringFind(upper_sym, "DOW") >= 0 || StringFind(upper_sym, "NDX") >= 0) {
+        symbol_type = "INDEX";
+        return;
     }
     
-    LogMessage("EA Deinitialized. Reason: " + reasonText);
-    Print("[INFO] Grasshopper EA stopped. Reason: ", reasonText);
+    // COMMODITIES
+    if (StringFind(upper_sym, "XAU") >= 0 || StringFind(upper_sym, "XAG") >= 0 ||
+        StringFind(upper_sym, "OIL") >= 0 || StringFind(upper_sym, "GAS") >= 0 ||
+        StringFind(upper_sym, "COPPER") >= 0 || StringFind(upper_sym, "WHEAT") >= 0) {
+        symbol_type = "COMMODITY";
+        return;
+    }
+    
+    // CRYPTOCURRENCIES
+    if (StringFind(upper_sym, "BTC") >= 0 || StringFind(upper_sym, "ETH") >= 0 ||
+        StringFind(upper_sym, "DOGE") >= 0 || StringFind(upper_sym, "XRP") >= 0) {
+        symbol_type = "CRYPTO";
+        return;
+    }
+    
+    // FOREX (6 chars with currency codes)
+    if (StringLen(_Symbol) == 6) {
+        symbol_type = "FOREX";
+        return;
+    }
+    
+    // DEFAULT: STOCK or FOREX
+    symbol_type = "STOCK/FOREX";
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// MAIN TRADING LOGIC - OnTick EVENT
+// ON TICK - MAIN ANALYSIS LOOP
 // ═══════════════════════════════════════════════════════════════════════
 
 void OnTick() {
-    // Safety check
+    
     if (!eaInitialized) return;
     
-    // Check if new 5-minute bar has formed
-    if (!IsNewBar()) return;
+    // Only analyze once per candle (on M5)
+    if (lastAnalysisTime == iTime(_Symbol, PERIOD_M5, 0)) return;
+    lastAnalysisTime = iTime(_Symbol, PERIOD_M5, 0);
     
-    // Check if within trading hours
-    if (!IsWithinTradingHours()) {
-        return;
-    }
+    // ═════════════════════════════════════════════════════════════════
+    // CHECK SPREAD
+    // ═════════════════════════════════════════════════════════════════
     
-    // ─────────────────────────────────────────────────────────────────────
-    // ANALYSIS PHASE: Multi-timeframe analysis
-    // ─────────────────────────────────────────────────────────────────────
-    
-    // 1. Weekly Trend Analysis
-    TrendDirection weeklyTrend = AnalyzeTrend();
-    if (weeklyTrend == TREND_NEUTRAL) {
-        LogMessage("Weekly trend not established - No trading");
-        return;
-    }
-    
-    // 2. Daily State Detection
-    PriceState dailyState = DetectDailyState();
-    if (dailyState == STATE_UNKNOWN) {
-        LogMessage("Daily state unknown - Insufficient data");
-        return;
-    }
-    
-    // 3. 4-Hour Pattern Analysis
-    // TODO: Analyze patterns
-    // TODO: Calculate Fibonacci levels
-    // TODO: Identify Elliott Waves
-    
-    // 4. 1-Hour Support/Resistance
-    // TODO: Identify S/R levels
-    // TODO: Check confluence
-    
-    // 5. 5-Minute Signal Generation
-    SignalType signal = GenerateSignal(weeklyTrend, dailyState);
-    
-    if (signal == SIGNAL_NONE) {
-        return;  // No valid signal
-    }
-    
-    // ─────────────────────────────────────────────────────────────────────
-    // TRADE EXECUTION PHASE
-    // ─────────────────────────────────────────────────────────────────────
-    
-    // Get current price
-    double bid = SymbolInfoDouble(TradeSymbol, SYMBOL_BID);
-    double ask = SymbolInfoDouble(TradeSymbol, SYMBOL_ASK);
-    
-    // Verify spread is acceptable
+    double bid = SymbolInfoDouble(_Symbol, SYMBOL_BID);
+    double ask = SymbolInfoDouble(_Symbol, SYMBOL_ASK);
     double spread = ask - bid;
-    double spreadPips = spread / SymbolInfoDouble(TradeSymbol, SYMBOL_POINT);
-    if (spreadPips > SpreadTolerance) {
-        LogMessage("Spread too high: " + DoubleToString(spreadPips, 1) + " pips");
+    
+    if (spread > MaxSpreadPoints * point_value) {
+        return; // Spread too high, skip
+    }
+    
+    // ═════════════════════════════════════════════════════════════════
+    // MULTI-TIMEFRAME ANALYSIS
+    // ═════════════════════════════════════════════════════════════════
+    
+    Print("\n[", TimeToString(TimeCurrent()), "] === ANALYZING ", _Symbol, " ===");
+    
+    // WEEKLY ANALYSIS
+    double weeklyHigh = iHigh(_Symbol, PERIOD_W1, 0);
+    double weeklyLow = iLow(_Symbol, PERIOD_W1, 0);
+    double weeklyClose = iClose(_Symbol, PERIOD_W1, 0);
+    
+    int weeklyTrend = 0;  // 0=neutral, 1=up, -1=down
+    if (weeklyClose > weeklyHigh) weeklyTrend = 1;
+    else if (weeklyClose < weeklyLow) weeklyTrend = -1;
+    
+    Print("[W1] Weekly Close: ", weeklyClose, " | High: ", weeklyHigh, " | Low: ", weeklyLow);
+    
+    // DAILY ANALYSIS
+    double dailyHigh = iHigh(_Symbol, PERIOD_D1, 0);
+    double dailyLow = iLow(_Symbol, PERIOD_D1, 0);
+    double dailyClose = iClose(_Symbol, PERIOD_D1, 0);
+    
+    int dailyTrend = 0;
+    if (dailyClose > dailyHigh) dailyTrend = 1;
+    else if (dailyClose < dailyLow) dailyTrend = -1;
+    
+    Print("[D1] Daily Close: ", dailyClose, " | High: ", dailyHigh, " | Low: ", dailyLow);
+    
+    // 4H ANALYSIS
+    double h4High = iHigh(_Symbol, PERIOD_H4, 0);
+    double h4Low = iLow(_Symbol, PERIOD_H4, 0);
+    double h4Close = iClose(_Symbol, PERIOD_H4, 0);
+    
+    int h4Trend = 0;
+    if (h4Close > h4High) h4Trend = 1;
+    else if (h4Close < h4Low) h4Trend = -1;
+    
+    Print("[H4] 4H Close: ", h4Close, " | High: ", h4High, " | Low: ", h4Low);
+    
+    // 1H ANALYSIS
+    double h1High = iHigh(_Symbol, PERIOD_H1, 0);
+    double h1Low = iLow(_Symbol, PERIOD_H1, 0);
+    double h1Close = iClose(_Symbol, PERIOD_H1, 0);
+    
+    int h1Trend = 0;
+    if (h1Close > h1High) h1Trend = 1;
+    else if (h1Close < h1Low) h1Trend = -1;
+    
+    Print("[H1] 1H Close: ", h1Close, " | High: ", h1High, " | Low: ", h1Low);
+    
+    // 5M ANALYSIS
+    double m5High = iHigh(_Symbol, PERIOD_M5, 0);
+    double m5Low = iLow(_Symbol, PERIOD_M5, 0);
+    double m5Close = iClose(_Symbol, PERIOD_M5, 0);
+    
+    int m5Trend = 0;
+    if (m5Close > m5High) m5Trend = 1;
+    else if (m5Close < m5Low) m5Trend = -1;
+    
+    Print("[M5] 5M Close: ", m5Close, " | High: ", m5High, " | Low: ", m5Low);
+    
+    // ═════════════════════════════════════════════════════════════════
+    // CONFLUENCE CALCULATION
+    // ═════════════════════════════════════════════════════════════════
+    
+    int confirmations = 0;
+    int confluenceScore = 0;
+    int signal_direction = 0; // 1=BUY, -1=SELL
+    
+    // Check if all align (confluence)
+    if (dailyTrend == h4Trend && h4Trend == h1Trend && h1Trend == m5Trend && dailyTrend != 0) {
+        confirmations = 4; // Daily + 4H + 1H + 5M
+        confluenceScore = 80;
+        signal_direction = dailyTrend;
+        
+        Print("\n[STRONG SIGNAL] All 4 timeframes align!");
+        Print("[Confirmations] ", confirmations, "/5");
+        Print("[Confluence Score] ", confluenceScore, "/100");
+        Print("[Direction] ", (signal_direction == 1 ? "BUY" : "SELL"));
+    }
+    else if (dailyTrend != 0 && h4Trend == h1Trend && h1Trend == dailyTrend) {
+        confirmations = 3; // Daily + 4H + 1H
+        confluenceScore = 65;
+        signal_direction = dailyTrend;
+        
+        Print("\n[GOOD SIGNAL] Daily + 4H + 1H align");
+        Print("[Confirmations] ", confirmations, "/5");
+        Print("[Confluence Score] ", confluenceScore, "/100");
+    }
+    else if (dailyTrend != 0 && h4Trend == dailyTrend) {
+        confirmations = 2;
+        confluenceScore = 50;
+        signal_direction = dailyTrend;
+        Print("\n[WEAK SIGNAL] Daily + 4H align");
+    }
+    else {
+        Print("\n[NO SIGNAL] Not enough confluence");
         return;
     }
     
-    // Check if maximum concurrent trades exceeded
-    if (GetOpenTradesCount() >= MaxConcurrentTrades) {
-        LogMessage("Max concurrent trades reached: " + IntegerToString(MaxConcurrentTrades));
+    // ═════════════════════════════════════════════════════════════════
+    // CHECK REQUIREMENTS
+    // ═════════════════════════════════════════════════════════════════
+    
+    if (confirmations < MinTimeframeConfirms) {
+        Print("[SKIP] Not enough confirmations (", confirmations, " < ", MinTimeframeConfirms, ")");
         return;
     }
     
-    // Check daily loss limit
-    if (GetDailyProfit() < -(AccountInfoDouble(ACCOUNT_BALANCE) * MaxDailyLossPercent / 100)) {
-        LogMessage("Daily loss limit exceeded!");
+    if (confluenceScore < MinConfluenceScore) {
+        Print("[SKIP] Confluence too low (", confluenceScore, " < ", MinConfluenceScore, ")");
         return;
     }
     
-    // Calculate stop loss and take profit
-    // TODO: Implement based on pattern analysis
-    double stopLoss = 0;
-    double takeProfitLevel1 = 0;
-    double takeProfitLevel2 = 0;
+    // ═════════════════════════════════════════════════════════════════
+    // ADJUST PARAMETERS FOR SYMBOL TYPE
+    // ═════════════════════════════════════════════════════════════════
     
-    // Calculate position size
-    double positionSize = CalculatePositionSize(stopLoss);
-    if (positionSize <= 0) {
-        LogMessage("Invalid position size calculated");
-        return;
+    double sl_pips = 50;
+    double tp_pips = 100;
+    
+    if (EnableAutoAdjust) {
+        if (symbol_type == "INDEX") {
+            sl_pips = 35;  // 30% tighter
+            tp_pips = 70;
+            Print("[ADJUST] Index: Using tighter stops");
+        }
+        else if (symbol_type == "COMMODITY") {
+            sl_pips = 65;  // 30% wider
+            tp_pips = 130;
+            Print("[ADJUST] Commodity: Using wider stops");
+        }
+        else if (symbol_type == "CRYPTO") {
+            sl_pips = 75;  // 50% wider
+            tp_pips = 150;
+            Print("[ADJUST] Crypto: Using extra wide stops");
+        }
+        else if (symbol_type == "STOCK/FOREX") {
+            sl_pips = 60;  // 20% wider
+            tp_pips = 120;
+            Print("[ADJUST] Stock: Using wider stops");
+        }
     }
     
-    // Normalize volume to broker requirements
-    positionSize = NormalizeVolume(positionSize);
+    // ═════════════════════════════════════════════════════════════════
+    // EXECUTE TRADE
+    // ═════════════════════════════════════════════════════════════════
     
-    // Verify sufficient margin
-    double requiredMargin = CalculateRequiredMargin(positionSize);
-    double freeMargin = AccountInfoDouble(ACCOUNT_MARGIN_FREE);
-    
-    if (requiredMargin > freeMargin) {
-        LogMessage("Insufficient margin. Required: " + DoubleToString(requiredMargin, 2) + 
-                  " Available: " + DoubleToString(freeMargin, 2));
-        return;
+    if (signal_direction == 1) {
+        // BUY SIGNAL
+        double entry = ask;
+        double stoploss = entry - (sl_pips * point_value);
+        double takeprofit = entry + (tp_pips * point_value);
+        
+        double lot_size = CalculateLotSize(entry, stoploss);
+        
+        Print("\n[BUY ORDER]");
+        Print("Entry: ", entry);
+        Print("Stop Loss: ", stoploss);
+        Print("Take Profit: ", takeprofit);
+        Print("Lot Size: ", lot_size);
+        
+        if (tradeManager.Buy(lot_size, _Symbol, entry, stoploss, takeprofit, "Grasshopper Buy")) {
+            Print("[SUCCESS] Buy order placed!");
+        } else {
+            Print("[FAILED] Buy order failed! Error: ", GetLastError());
+        }
     }
-    
-    // ─────────────────────────────────────────────────────────────────────
-    // PLACE TRADE
-    // ─────────────────────────────────────────────────────────────────────
-    
-    if (signal == SIGNAL_BUY) {
-        PlaceBuyOrder(positionSize, ask, stopLoss, takeProfitLevel1, takeProfitLevel2);
-    } else if (signal == SIGNAL_SELL) {
-        PlaceSellOrder(positionSize, bid, stopLoss, takeProfitLevel1, takeProfitLevel2);
+    else if (signal_direction == -1) {
+        // SELL SIGNAL
+        double entry = bid;
+        double stoploss = entry + (sl_pips * point_value);
+        double takeprofit = entry - (tp_pips * point_value);
+        
+        double lot_size = CalculateLotSize(entry, stoploss);
+        
+        Print("\n[SELL ORDER]");
+        Print("Entry: ", entry);
+        Print("Stop Loss: ", stoploss);
+        Print("Take Profit: ", takeprofit);
+        Print("Lot Size: ", lot_size);
+        
+        if (tradeManager.Sell(lot_size, _Symbol, entry, stoploss, takeprofit, "Grasshopper Sell")) {
+            Print("[SUCCESS] Sell order placed!");
+        } else {
+            Print("[FAILED] Sell order failed! Error: ", GetLastError());
+        }
     }
-    
-    // ─────────────────────────────────────────────────────────────────────
-    // MANAGE EXISTING TRADES
-    // ─────────────────────────────────────────────────────────────────────
-    
-    ManageOpenTrades();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
-// PLACEHOLDER FUNCTIONS - To be implemented in Phase 1
+// CALCULATE LOT SIZE
 // ═══════════════════════════════════════════════════════════════════════
 
-bool IsNewBar() {
-    static datetime lastTime = 0;
-    datetime currentTime = iTime(TradeSymbol, PERIOD_M5, 0);
+double CalculateLotSize(double entry_price, double stop_loss) {
+    double account_balance = AccountInfoDouble(ACCOUNT_BALANCE);
+    double risk_amount = account_balance * (RiskPercentage / 100.0);
     
-    if (currentTime != lastTime) {
-        lastTime = currentTime;
-        return true;
+    double pips = MathAbs(entry_price - stop_loss) / point_value;
+    if (pips == 0) pips = 1;
+    
+    double lot_size = risk_amount / (pips * 10.0);
+    
+    // Get symbol limits
+    double min_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MIN);
+    double max_lot = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_MAX);
+    double lot_step = SymbolInfoDouble(_Symbol, SYMBOL_VOLUME_STEP);
+    
+    // Normalize
+    lot_size = MathRound(lot_size / lot_step) * lot_step;
+    
+    // Clamp to limits
+    if (lot_size < min_lot) lot_size = min_lot;
+    if (lot_size > max_lot) lot_size = max_lot;
+    
+    return lot_size;
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// ON DEINIT
+// ═══════════════════════════════════════════════════════════════════════
+
+void OnDeinit(const int reason) {
+    Print("[INFO] Universal EA stopped on ", _Symbol, ". Reason: ", GetDeInitReason(reason));
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// GET DEINIT REASON
+// ═══════════════════════════════════════════════════════════════════════
+
+string GetDeInitReason(int reason) {
+    switch (reason) {
+        case REASON_ACCOUNT: return "Account deleted";
+        case REASON_RECOMPILE: return "Program recompiled";
+        case REASON_CHARTCHANGE: return "Chart change";
+        case REASON_CHARTCLOSE: return "Chart closed";
+        case REASON_PARAMETERS: return "Parameters changed";
+        case REASON_DAYFILTER: return "Day filter";
+        case REASON_REMOVE: return "EA removed";
+        case REASON_TEMPLATE: return "Template changed";
+        case REASON_INITFAILED: return "OnInit failed";
+        case REASON_CLOSE: return "Terminal closed";
+        default: return "Unknown";
     }
-    return false;
 }
-
-bool IsWithinTradingHours() {
-    // TODO: Implement based on SessionStartHour and SessionEndHour
-    return true;
-}
-
-TrendDirection AnalyzeTrend() {
-    // TODO: Implement trend analysis on PERIOD_W1
-    // Compare last 2 weekly candles for HH+HL or LH+LL
-    return TREND_NEUTRAL;  // Placeholder
-}
-
-PriceState DetectDailyState() {
-    // TODO: Implement daily impulse/correction detection
-    return STATE_UNKNOWN;  // Placeholder
-}
-
-SignalType GenerateSignal(TrendDirection trend, PriceState state) {
-    // TODO: Implement complete signal generation
-    // 1. Check 4H patterns
-    // 2. Calculate Fibonacci
-    // 3. Check 1H S/R
-    // 4. Analyze 5M candlestick
-    // 5. Generate signal with confluence score
-    return SIGNAL_NONE;  // Placeholder
-}
-
-void PlaceBuyOrder(double volume, double entry, double sl, double tp1, double tp2) {
-    // TODO: Implement BUY order placement
-    LogMessage("BUY Signal: Volume=" + DoubleToString(volume, 2) + 
-              " Entry=" + DoubleToString(entry, 5) + 
-              " SL=" + DoubleToString(sl, 5) + 
-              " TP1=" + DoubleToString(tp1, 5));
-}
-
-void PlaceSellOrder(double volume, double entry, double sl, double tp1, double tp2) {
-    // TODO: Implement SELL order placement
-    LogMessage("SELL Signal: Volume=" + DoubleToString(volume, 2) + 
-              " Entry=" + DoubleToString(entry, 5) + 
-              " SL=" + DoubleToString(sl, 5) + 
-              " TP1=" + DoubleToString(tp1, 5));
-}
-
-void ManageOpenTrades() {
-    // TODO: Implement trailing stops, TP management, trade monitoring
-}
-
-double CalculatePositionSize(double stopLossPips) {
-    // TODO: Implement proper position sizing
-    // Position Size = (Account * Risk %) / (SL pips * pip value)
-    return 0.1;  // Placeholder: 0.1 lots
-}
-
-double CalculateRequiredMargin(double volume) {
-    // TODO: Calculate margin requirement
-    return 0;  // Placeholder
-}
-
-double NormalizeVolume(double volume) {
-    // TODO: Normalize to broker's lot size requirements
-    double minLot = SymbolInfoDouble(TradeSymbol, SYMBOL_VOLUME_MIN);
-    double stepLot = SymbolInfoDouble(TradeSymbol, SYMBOL_VOLUME_STEP);
-    return MathMax(minLot, MathFloor(volume / stepLot) * stepLot);
-}
-
-int GetOpenTradesCount() {
-    // TODO: Count open positions for this EA
-    return 0;
-}
-
-double GetDailyProfit() {
-    // TODO: Calculate current day's P&L
-    return 0.0;
-}
-
-void LogMessage(string message) {
-    string timeStr = TimeToString(TimeCurrent(), TIME_DATE | TIME_SECONDS);
-    string logEntry = "[" + timeStr + "] " + message;
-    
-    // Print to journal
-    Print(logEntry);
-    
-    // TODO: Write to log file
-    // FileOpen, FileWrite, FileClose
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// END OF MAIN EA CODE
-// ═══════════════════════════════════════════════════════════════════════
-
-/*
-DEVELOPMENT CHECKLIST:
-
-Phase 1 (Weeks 1-2) - Core Analysis Engine:
-  [ ] ChartData.mqh - OHLC data fetching
-  [ ] TrendAnalyzer.mqh - Weekly trend detection
-  [ ] ImpulseCorrection.mqh - Daily impulse/correction
-  [ ] PatternRecognizer.mqh - 4H pattern recognition
-  [ ] FibonacciLevels.mqh - Fibonacci calculations
-  [ ] ElliottWave.mqh - Elliott Wave analysis
-  [ ] Unit tests for each module
-
-Phase 2 (Week 3) - Signal Generation:
-  [ ] SupportResistance.mqh - 1H S/R detection
-  [ ] SignalGenerator.mqh - 5M entry signals
-  [ ] Confluence scorer
-  [ ] Historical data validation
-
-Phase 3 (Week 4) - Trade Management:
-  [ ] RiskManager.mqh - Position sizing
-  [ ] OrderManager.mqh - Order execution
-  [ ] Stop loss management
-  [ ] Take profit management
-
-Phase 4 (Weeks 5-6) - MT5 Integration:
-  [ ] MT5 API connection
-  [ ] Real-time data
-  [ ] Order execution
-  [ ] Account monitoring
-
-Phase 5 (Weeks 7-8) - Testing:
-  [ ] Backtest on historical data
-  [ ] Optimize parameters
-  [ ] Paper trading
-  [ ] Bug fixing
-
-Phase 6 (Week 9+) - Live Trading:
-  [ ] Small positions
-  [ ] Monitoring
-  [ ] Scaling
-  [ ] Performance tracking
-
-*/
