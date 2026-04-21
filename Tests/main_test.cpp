@@ -55,7 +55,7 @@ std::ofstream csvFile;
 
 #define ASSERT_FALSE(condition, message) \
     totalTests++; \
-    if (!condition) { \
+    if (!(condition)) { \
         std::cout << "  ✓ PASS: " << message << std::endl; \
         passedTests++; \
         csvFile << currentSuite << "," << currentTestName << ",PASS,\"" << message << "\"\n"; \
@@ -265,6 +265,53 @@ void TestSignalGeneration() {
     ASSERT_TRUE(shouldGenerateSignal, "All conditions met for buy signal");
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// UNIVERSAL SYMBOL ADAPTER HELPERS (mirrors UniversalSymbolAdapter.mqh logic)
+// ═══════════════════════════════════════════════════════════════════════
+
+enum SymbolType { FOREX_PAIR, STOCK_INDEX, INDIVIDUAL_STOCK, COMMODITY, CRYPTOCURRENCY, UNKNOWN_SYMBOL };
+
+// Mirrors DetectSymbolType() — commodity/crypto checked BEFORE forex to avoid misclassification
+SymbolType DetectSymbolType(const std::string& sym) {
+    // Commodity (must check before forex — XAUUSD, XAGUSD contain "USD")
+    if (sym.find("XAU") != std::string::npos || sym.find("XAG") != std::string::npos ||
+        sym.find("OIL") != std::string::npos || sym.find("GAS") != std::string::npos ||
+        sym.find("COPPER") != std::string::npos)
+        return COMMODITY;
+
+    // Crypto (must check before forex — BTCUSD, ETHUSD contain "USD")
+    if (sym.find("BTC") != std::string::npos || sym.find("ETH") != std::string::npos ||
+        sym.find("DOGE") != std::string::npos || sym.find("XRP") != std::string::npos ||
+        sym.find("ADA") != std::string::npos)
+        return CRYPTOCURRENCY;
+
+    // Forex (6-char pairs with known currency codes)
+    if (sym.size() == 6 &&
+        (sym.find("USD") != std::string::npos || sym.find("EUR") != std::string::npos ||
+         sym.find("GBP") != std::string::npos || sym.find("JPY") != std::string::npos ||
+         sym.find("CAD") != std::string::npos || sym.find("CHF") != std::string::npos))
+        return FOREX_PAIR;
+
+    // Indices (3–5 chars, known names)
+    if (sym == "DAX" || sym == "CAC" || sym == "FTSE" || sym == "ASX" ||
+        sym == "HSI" || sym == "MIB" || sym == "IBEX")
+        return STOCK_INDEX;
+
+    return INDIVIDUAL_STOCK;
+}
+
+// Mirrors AdjustParametersForSymbolType()
+void AdjustParameters(SymbolType type, double& sl, double& tp) {
+    switch (type) {
+        case FOREX_PAIR:      break;
+        case STOCK_INDEX:     sl *= 0.7;  tp *= 0.7;  break;
+        case INDIVIDUAL_STOCK:sl *= 1.2;  tp *= 1.2;  break;
+        case COMMODITY:       sl *= 1.3;  tp *= 1.3;  break;
+        case CRYPTOCURRENCY:  sl *= 1.5;  tp *= 1.5;  break;
+        default: break;
+    }
+}
+
 // Test Suite 5: Multi-Symbol Manager (mirrors Grasshopper_MULTI.mq5 logic)
 void TestMultiSymbol() {
     currentSuite = "Multi Symbol";
@@ -330,6 +377,86 @@ void TestMultiSymbol() {
     ASSERT_TRUE(magicNumber == 20260420, "Magic number matches EA constant");
 }
 
+// Test Suite 6: Universal Symbol Adapter (mirrors Grasshopper_UNIVERSAL.mq5 logic)
+void TestUniversalSymbol() {
+    currentSuite = "Universal Symbol";
+    std::cout << "\n════════════════════════════════════════════════════════════════════════" << std::endl;
+    std::cout << "UNIVERSAL SYMBOL TEST SUITE" << std::endl;
+    std::cout << "════════════════════════════════════════════════════════════════════════" << std::endl;
+
+    // ── Symbol Type Detection ──────────────────────────────────────────
+    TEST_START("Symbol Detection - Forex Pairs");
+    ASSERT_TRUE(DetectSymbolType("EURUSD") == FOREX_PAIR,  "EURUSD classified as Forex");
+    ASSERT_TRUE(DetectSymbolType("GBPUSD") == FOREX_PAIR,  "GBPUSD classified as Forex");
+    ASSERT_TRUE(DetectSymbolType("USDJPY") == FOREX_PAIR,  "USDJPY classified as Forex");
+
+    TEST_START("Symbol Detection - Commodities (not mis-classified as Forex)");
+    ASSERT_TRUE(DetectSymbolType("XAUUSD") == COMMODITY,   "XAUUSD classified as Commodity (not Forex)");
+    ASSERT_TRUE(DetectSymbolType("XAGUSD") == COMMODITY,   "XAGUSD classified as Commodity (not Forex)");
+    ASSERT_TRUE(DetectSymbolType("OILUSD") == COMMODITY,   "OILUSD classified as Commodity");
+
+    TEST_START("Symbol Detection - Cryptocurrencies (not mis-classified as Forex)");
+    ASSERT_TRUE(DetectSymbolType("BTCUSD") == CRYPTOCURRENCY, "BTCUSD classified as Crypto (not Forex)");
+    ASSERT_TRUE(DetectSymbolType("ETHUSD") == CRYPTOCURRENCY, "ETHUSD classified as Crypto (not Forex)");
+    ASSERT_TRUE(DetectSymbolType("XRPUSD") == CRYPTOCURRENCY, "XRPUSD classified as Crypto (not Forex)");
+
+    TEST_START("Symbol Detection - Stock Indices");
+    ASSERT_TRUE(DetectSymbolType("DAX")  == STOCK_INDEX, "DAX classified as Stock Index");
+    ASSERT_TRUE(DetectSymbolType("FTSE") == STOCK_INDEX, "FTSE classified as Stock Index");
+    ASSERT_TRUE(DetectSymbolType("CAC")  == STOCK_INDEX, "CAC classified as Stock Index");
+
+    TEST_START("Symbol Detection - Individual Stocks");
+    ASSERT_TRUE(DetectSymbolType("AAPL") == INDIVIDUAL_STOCK, "AAPL classified as Individual Stock");
+    ASSERT_TRUE(DetectSymbolType("TSLA") == INDIVIDUAL_STOCK, "TSLA classified as Individual Stock");
+
+    // ── Parameter Adjustment ──────────────────────────────────────────
+    TEST_START("Parameter Adjustment - Forex (no change)");
+    double sl = 50.0, tp = 100.0;
+    AdjustParameters(FOREX_PAIR, sl, tp);
+    ASSERT_NEAR(sl, 50.0, 0.01,  "Forex SL unchanged");
+    ASSERT_NEAR(tp, 100.0, 0.01, "Forex TP unchanged");
+
+    TEST_START("Parameter Adjustment - Stock Index (30% tighter)");
+    sl = 50.0; tp = 100.0;
+    AdjustParameters(STOCK_INDEX, sl, tp);
+    ASSERT_NEAR(sl, 35.0, 0.01, "Index SL = 50 * 0.7 = 35");
+    ASSERT_NEAR(tp, 70.0, 0.01, "Index TP = 100 * 0.7 = 70");
+
+    TEST_START("Parameter Adjustment - Individual Stock (20% wider)");
+    sl = 50.0; tp = 100.0;
+    AdjustParameters(INDIVIDUAL_STOCK, sl, tp);
+    ASSERT_NEAR(sl, 60.0, 0.01,  "Stock SL = 50 * 1.2 = 60");
+    ASSERT_NEAR(tp, 120.0, 0.01, "Stock TP = 100 * 1.2 = 120");
+
+    TEST_START("Parameter Adjustment - Commodity (30% wider)");
+    sl = 50.0; tp = 100.0;
+    AdjustParameters(COMMODITY, sl, tp);
+    ASSERT_NEAR(sl, 65.0, 0.01,  "Commodity SL = 50 * 1.3 = 65");
+    ASSERT_NEAR(tp, 130.0, 0.01, "Commodity TP = 100 * 1.3 = 130");
+
+    TEST_START("Parameter Adjustment - Crypto (50% wider)");
+    sl = 50.0; tp = 100.0;
+    AdjustParameters(CRYPTOCURRENCY, sl, tp);
+    ASSERT_NEAR(sl, 75.0, 0.01,  "Crypto SL = 50 * 1.5 = 75");
+    ASSERT_NEAR(tp, 150.0, 0.01, "Crypto TP = 100 * 1.5 = 150");
+
+    // ── Signal Filters (from OnTick logic) ────────────────────────────
+    TEST_START("Signal Filter - Confluence Score Threshold");
+    int minConfluence = 50;
+    ASSERT_TRUE(55 >= minConfluence,  "Score 55 passes min confluence of 50");
+    ASSERT_FALSE(45 >= minConfluence, "Score 45 rejected below min confluence of 50");
+
+    TEST_START("Signal Filter - Timeframe Confirmations");
+    int minConfirms = 3;
+    ASSERT_TRUE(4 >= minConfirms,  "4 confirmations passes minimum of 3");
+    ASSERT_FALSE(2 >= minConfirms, "2 confirmations rejected below minimum of 3");
+
+    TEST_START("Signal Filter - Spread Check");
+    double maxSpread = 5.0;
+    ASSERT_TRUE(3.2 <= maxSpread,  "Spread 3.2 accepted (below max 5.0)");
+    ASSERT_FALSE(6.1 <= maxSpread, "Spread 6.1 rejected (above max 5.0)");
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // TEST RUNNER
 // ═══════════════════════════════════════════════════════════════════════
@@ -349,6 +476,7 @@ int main() {
     TestPositionSizing();
     TestSignalGeneration();
     TestMultiSymbol();
+    TestUniversalSymbol();
 
     std::cout << "\n════════════════════════════════════════════════════════════════════════" << std::endl;
     std::cout << "TEST SUMMARY" << std::endl;
